@@ -1,0 +1,5 @@
+EEG	Signal électrique du cerveau enregistré par électrodes
+
+MNE-Python	Outil scientifique pour analyser, filtrer, visualiser et manipuler des EEG
+
+PhysioNet	Plateforme open-data avec plein de jeux EEG réels à télécharger
