@@ -16,7 +16,7 @@ def load_data(subject_id, runs):
     return raw
 
 
-def visualize_raw(raw, duration=10.0):
+def visualize(raw, duration=10.0):
     channels = ['C3', 'C4', 'Cz']
     available = [ch for ch in channels if ch in raw.ch_names]
 
@@ -43,8 +43,7 @@ def visualize_raw(raw, duration=10.0):
 
 def apply_filter(raw, l_freq=8.0, h_freq=30.0):
     raw_filtered = raw.copy()
-    raw_filtered.filter(l_freq=l_freq, h_freq=h_freq,
-                        method='fir', phase='zero', verbose=False)
+    raw_filtered.filter(l_freq=l_freq, h_freq=h_freq, method='fir', phase='zero', verbose=False)
     return raw_filtered
 
 
@@ -53,9 +52,9 @@ def main():
     runs = [4, 8, 12]  # Imagery left/right
 
     raw = load_data(subject_id, runs)
-    visualize_raw(raw, duration=30.0)
+    visualize(raw, duration=30.0)
     raw = apply_filter(raw, l_freq=8.0, h_freq=30.0)
-    visualize_raw(raw, duration=30.0)
+    visualize(raw, duration=30.0)
 
 
 if __name__ == "__main__":
