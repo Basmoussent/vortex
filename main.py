@@ -1,116 +1,75 @@
 #!/usr/bin/env python3
 
-import matplotlib.pyplot as plt
+import numpy as np
 import mne
-from mne.datasets import eegbci
-from mne.io import concatenate_raws, read_raw_edf
-
-
-def load_data(subject_id, runs):
-    """
-    Load EEG data from PhysioNet Motor Imagery dataset.
-
-    Parameters
-    ----------
-    subject_id : int
-        Subject number (1-109)
-    runs : list
-        Run numbers to load (e.g., [4, 8, 12] for left/right imagery)
-
-    Returns
-    -------
-    raw : mne.io.Raw
-        Concatenated raw EEG data with standard montage
-    """
-    raw_fnames = eegbci.load_data(subject_id, runs)
-    raws = [read_raw_edf(f, preload=True, verbose=False) for f in raw_fnames]
-    raw = concatenate_raws(raws) if len(raws) > 1 else raws[0]
-    eegbci.standardize(raw)
-    montage = mne.channels.make_standard_montage('standard_1005')
-    raw.set_montage(montage)
-    return raw
-
-
-def visualize(raw, duration=10.0):
-    """
-    Visualize raw EEG signals in time domain.
-
-    Plots motor cortex channels (C3, C4, Cz) over time:
-    - C3: Left motor cortex (controls right hand)
-    - C4: Right motor cortex (controls left hand)
-    - Cz: Central reference
-
-    Parameters
-    ----------
-    raw : mne.io.Raw
-        Raw EEG data
-    duration : float
-        Time window to display in seconds
-    """
-    channels = ['C3', 'C4', 'Cz']
-    available = [ch for ch in channels if ch in raw.ch_names]
-
-    if not available:
-        available = raw.ch_names[:3]
-
-    # Extract signal data and timestamps for selected channels
-    data, times = raw.get_data(picks=available, return_times=True)
-    # Create boolean mask to keep only first N seconds
-    mask = times <= duration
-    # Apply mask and convert from Volts to microvolts (×1e6)
-    data = data[:, mask] * 1e6
-    # Apply same mask to time array
-    times = times[mask]
-
-    _, ax = plt.subplots(figsize=(12, 6))
-    for i, ch in enumerate(available):
-        ax.plot(times, data[i] + i * 50, label=ch, linewidth=0.5)
-
-    ax.set_xlabel("Temps (s)")
-    ax.set_ylabel("Amplitude (µV)")
-    ax.set_title("Signaux EEG bruts")
-    ax.legend()
-    ax.grid(True, alpha=0.3)
-    plt.tight_layout()
-    plt.show()
-
-
-def apply_filter(raw, l_freq=8.0, h_freq=30.0):
-    """
-    Apply bandpass filter to keep mu (8-12 Hz) and beta (12-30 Hz) bands.
-
-    These frequency bands are critical for motor imagery:
-    - Mu band: Sensorimotor rhythm at rest
-    - Beta band: Active motor activity
-
-    Parameters
-    ----------
-    raw : mne.io.Raw
-        Raw EEG data
-    l_freq : float
-        Low cutoff frequency (default: 8 Hz)
-    h_freq : float
-        High cutoff frequency (default: 30 Hz)
-
-    Returns
-    -------
-    raw_filtered : mne.io.Raw
-        Bandpass filtered EEG data
-    """
-    raw_filtered = raw.copy()
-    raw_filtered.filter(l_freq=l_freq, h_freq=h_freq, method='fir', phase='zero', verbose=False)
-    return raw_filtered
+from visualize import load_data, apply_filter
+from csp import CSP
+from sklearn.pipeline import Pipeline
+from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
+from sklearn.model_selection import cross_val_score
 
 
 def main():
+    """Test CSP pipeline on real EEG data"""
+
     subject_id = 1
-    runs = [4, 8, 12]  # Imagery left/right
+    runs = [4, 8, 12]  # Motor imagery left/right
 
+	# on load juste de la data c'est pas interessant 
     raw = load_data(subject_id, runs)
-    visualize(raw, duration=30.0)
-    raw = apply_filter(raw, l_freq=8.0, h_freq=30.0)
-    visualize(raw, duration=30.0)
+    raw_filtered = apply_filter(raw, l_freq=8.0, h_freq=30.0)
 
+    events, event_id = mne.events_from_annotations(raw_filtered, verbose=False)
+    event_id_selected = {k: v for k, v in event_id.items() if k in ['T1', 'T2']}
+	# jsuque la
+    
+	# on load les signaux ("epochs" c;est grossomodo les signaux )
+    epochs = mne.Epochs(
+        raw_filtered,
+        events,
+        event_id=event_id_selected,
+        tmin=0.0,
+        tmax=2.0,
+        baseline=None,
+        preload=True,
+        verbose=False
+    )
+
+    X = epochs.get_data()  # (n_epochs, n_channels, n_times)
+    y = epochs.events[:, 2]
+
+    # Convert labels to 0 and 1
+    unique_labels = np.unique(y)
+    y = (y == unique_labels[1]).astype(int)
+
+    print(f"\nData: {X.shape[0]} epochs, {X.shape[1]} channels, {X.shape[2]} samples")
+    print(f"Classes: {np.sum(y==0)} vs {np.sum(y==1)}")
+
+    print("\n" + "-"*60)
+    print("CSP Dimensionality Reduction")
+    print("-"*60)
+
+    csp = CSP(n_components=6)
+    csp.fit(X, y)
+    X_csp = csp.transform(X)
+
+    print(f"Input:  {X.shape}")
+    print(f"Output: {X_csp.shape}")
+    print(f"Reduction: {X.shape[1]} channels → {csp.n_components} features")
+
+    print("\n" + "-"*60)
+    print("Pipeline Test (CSP + LDA)")
+    print("-"*60)
+
+	# Lis la def de LinearDiscrimnantAnlylis elle est pas longue et tres comprehensible
+    pipeline = Pipeline([
+        ('csp', CSP(n_components=6)),
+        ('lda', LinearDiscriminantAnalysis())
+    ])
+
+    scores = cross_val_score(pipeline, X, y, cv=5)
+    print(f"5-Fold CV scores: {scores}")
+    print(f"Mean accuracy: {scores.mean():.3f} ± {scores.std():.3f}")
 
 if __name__ == "__main__":
     main()
