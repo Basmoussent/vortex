@@ -10,7 +10,7 @@ from csp import CSP
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
-from sklearn.model_selection import cross_val_score
+from sklearn.model_selection import cross_val_score, train_test_split
 
 subject_ids = -1
 mode = "unknown"
@@ -95,34 +95,48 @@ def check_args():
 
 
 
-def train(pipeline, X, y, flag):
-    pipeline.fit(X, y)
-    y_pred = pipeline.predict(X)
-    accuracy = np.mean(y_pred == y)
-    scores = cross_val_score(pipeline, X, y)
+def train(pipeline, X_train, y_train, X_test, y_test, flag):
+    #
+    # Ducoup maitenant on as 2 data train et test
+    #
     if flag:
-        print(f"{scores}\ncross_val_scores: {scores.mean()}")
-    save_model(pipeline)  # sauvegarde apres entrainement
+        scores = cross_val_score(pipeline, X_train, y_train, cv=5)
+        print(f"Cross-val scores: {scores}")
+        print(f"Cross-val mean: {scores.mean():.3f} ± {scores.std():.3f}")
+
+    pipeline.fit(X_train, y_train)
+
+    y_train_pred = pipeline.predict(X_train)
+    train_accuracy = np.mean(y_train_pred == y_train)
+
+    y_test_pred = pipeline.predict(X_test)
+    test_accuracy = np.mean(y_test_pred == y_test)
+
+    if flag:
+        print(f"\nTrain accuracy: {train_accuracy:.3f}")
+        print(f"Test accuracy: {test_accuracy:.3f}")
+        if train_accuracy - test_accuracy > 0.15:
+            print(f"ovverfitting detecteeeeed boi: {train_accuracy - test_accuracy}")
+
+
+    save_model(pipeline)
 
 
 
 
 
-def predict(pipeline, X, y, flag): # flag a 1 quand only predict et a 0 qunad on doit faire tous les sujet/exp
-    flag = True #toremove (only bc for all isnt implemented yet)
-    if (flag):
-        equal = False
-        y_pred = pipeline.predict(X)
-        print("epoch nb: [prediction] [truth] equal?")
-        for i, (pred, truth) in enumerate(zip(y_pred, y)):
-            equal =  True if int(truth) == int(pred) else False
-            print(f"epoch {i:02d}\t\t[{truth}]\t[{pred}] {equal}")
-    else:
-        print("NEED TO IMPLEMENT THE VERSION FOR ALL THE SUBJECTS/EXP")
-        # print(f"Mean accuracy: {scores.mean():.3f} ± {scores.std():.3f}")
-    # print(f"Accuracy{"accuracy"}")
-    accuracy = np.mean(y_pred == y)
-    print(f"Accuracy: {accuracy:.3f}")
+def predict(pipeline, X_test, y_test, flag):
+    """Prediction sur test set uniquement"""
+    y_pred = pipeline.predict(X_test)
+
+    if flag:
+        print("epoch nb: [truth] [prediction] equal?")
+        for i, (truth, pred) in enumerate(zip(y_test, y_pred)):
+            equal = True if int(truth) == int(pred) else False
+            print(f"epoch {i:02d}\t\t[{truth}]\t[{pred}]\t {equal}")
+
+    accuracy = np.mean(y_pred == y_test)
+    print(f"\nTest accuracy: {accuracy:.3f}")
 
 
 
@@ -146,7 +160,7 @@ def main():
     #toremove ########
     if (subject_ids == -1 and exp_id == -1):
         subject_id = 14
-        runs = [4, 8, 12]
+        runs = [4, 6, 8, 10, 12, 14]  # 6 runs au lieu de 3 pour plus de données
     ##################
 
 	# on load juste de la data c'est pas interessant 
@@ -182,24 +196,31 @@ def main():
     y = epochs.events[:, 2]
 
     # Convert labels to 0 and 1
-    unique_labels = np.unique(y)    
+    unique_labels = np.unique(y)
     y = (y == unique_labels[1]).astype(int)
 
+    # Split train/test - 80% train, 20% test (plus de données pour entraîner)
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42, stratify=y
+    )
+
+    print(f"Dataset split: {len(X_train)} train epochs, {len(X_test)} test epochs")
 
     pipeline = Pipeline([
-        ('csp', CSP(n_components=4, reg=1e-4)),
-        ('scaler', StandardScaler()), # need to normalise and scaling features/values
+        ('csp', CSP(n_components=2, reg=1e-3)),  # 2 composants au lieu de 4, plus de régularisation
+        ('scaler', StandardScaler()),
         ('lda', LinearDiscriminantAnalysis(solver='lsqr', shrinkage='auto')) # check to edit algo/settings
     ])
 
     if mode == "train":
-        train(pipeline, X, y, True)
+        train(pipeline, X_train, y_train, X_test, y_test, True)
     if mode == "predict":
-        predict(pipeline, X, y, True)
-    if mode == "unknown":
-        train(pipeline, X, y, False)
         pipeline = load_model()
-        predict(pipeline, X, y, False)
+        predict(pipeline, X_test, y_test, True)
+    if mode == "unknown":
+        train(pipeline, X_train, y_train, X_test, y_test, True)  # True pour voir les détails
+        pipeline = load_model()
+        predict(pipeline, X_test, y_test, True)  # True pour voir les prédictions
 
 
 
