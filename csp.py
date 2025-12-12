@@ -16,7 +16,8 @@ class CSP(BaseEstimator, TransformerMixin):
     Keeps n/2 filters from each end (best for each class).
     """
 
-    def __init__(self, n_components=6, reg=1e-6):
+    def __init__(self, n_components=4, reg=1e-4):
+    # def __init__(self, n_components=6, reg=1e-6):
         self.n_components = n_components  # Total filters to keep (must be even)
         self.reg = reg  # Tiny regularization for numerical stability
         self.W_ = None  # Spatial filters (learned during fit)
@@ -102,8 +103,8 @@ class CSP(BaseEstimator, TransformerMixin):
             # Project epoch onto CSP filters
             projected = self.W_ @ epoch
             features[i] = np.log(np.var(projected, axis=1) + 1e-10)
-
         return features
+
 
     def fit_transform(self, X, y):
         return self.fit(X, y).transform(X)
