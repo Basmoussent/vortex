@@ -1,0 +1,1 @@
+faire en sorte que quand pas d arguemnts et que sujet id vaut -1 et run = all ca fonctionne 
