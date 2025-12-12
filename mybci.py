@@ -95,10 +95,13 @@ def check_args():
 
 
 
-def train(pipeline, X, y):
+def train(pipeline, X, y, flag):
     pipeline.fit(X, y)
     y_pred = pipeline.predict(X)
     accuracy = np.mean(y_pred == y)
+    scores = cross_val_score(pipeline, X, y)
+    if flag:
+        print(f"{scores}\ncross_val_scores: {scores.mean()}")
     save_model(pipeline)  # sauvegarde apres entrainement
 
 
@@ -116,6 +119,11 @@ def predict(pipeline, X, y, flag): # flag a 1 quand only predict et a 0 qunad on
             print(f"epoch {i:02d}\t\t[{truth}]\t[{pred}] {equal}")
     else:
         print("NEED TO IMPLEMENT THE VERSION FOR ALL THE SUBJECTS/EXP")
+        # print(f"Mean accuracy: {scores.mean():.3f} ± {scores.std():.3f}")
+    # print(f"Accuracy{"accuracy"}")
+    print("NEED ACCURACY")
+
+
 
 
 
@@ -137,7 +145,7 @@ def main():
     #toremove ########
     if (subject_ids == -1 and exp_id == -1):
         subject_id = 14
-        runs = 4
+        runs = [4, 8, 12]
     ##################
 
 	# on load juste de la data c'est pas interessant 
@@ -177,31 +185,6 @@ def main():
     y = (y == unique_labels[1]).astype(int)
 
 
-
-    # print(f"\nData: {X.shape[0]} epochs, {X.shape[1]} channels, {X.shape[2]} samples")
-    # print(f"Classes: {np.sum(y==0)} vs {np.sum(y==1)}")
-
-    # print("\n" + "-"*60)
-    # print("CSP Dimensionality Reduction")
-    # print("-"*60)
-
-    # csp = CSP(n_components=6)
-    # csp.fit(X, y)
-    # X_csp = csp.transform(X)
-
-    # print(f"Input:  {X.shape}")
-    # print(f"Output: {X_csp.shape}")
-    # print(f"Reduction: {X.shape[1]} channels → {csp.n_components} features")
-
-    # print("\n" + "-"*60)
-    # print("Pipeline Test (CSP + LDA)")
-    # print("-"*60)
-
-	# Lis la def de LinearDiscrimnantAnlylis elle est pas longue et tres comprehensible
-    # pipeline = Pipeline([
-        # ('csp', CSP(n_components=4)),
-        # ('lda', LinearDiscriminantAnalysis())
-    # ])
     pipeline = Pipeline([
         ('csp', CSP(n_components=4, reg=1e-4)),
         ('scaler', StandardScaler()), # need to normalise and scaling features/values
@@ -209,18 +192,15 @@ def main():
     ])
 
     if mode == "train":
-        train(pipeline, X, y)
+        train(pipeline, X, y, True)
     if mode == "predict":
         predict(pipeline, X, y, True)
     if mode == "unknown":
-        train(pipeline, X, y)
+        train(pipeline, X, y, False)
         pipeline = load_model()
         predict(pipeline, X, y, False)
 
 
-    scores = cross_val_score(pipeline, X, y, cv=5)
-    print(f"5-Fold CV scores: {scores}")
-    print(f"Mean accuracy: {scores.mean():.3f} ± {scores.std():.3f}")
 
 if __name__ == "__main__":
     main()
