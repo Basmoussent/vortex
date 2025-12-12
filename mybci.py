@@ -121,7 +121,8 @@ def predict(pipeline, X, y, flag): # flag a 1 quand only predict et a 0 qunad on
         print("NEED TO IMPLEMENT THE VERSION FOR ALL THE SUBJECTS/EXP")
         # print(f"Mean accuracy: {scores.mean():.3f} ± {scores.std():.3f}")
     # print(f"Accuracy{"accuracy"}")
-    print("NEED ACCURACY")
+    accuracy = np.mean(y_pred == y)
+    print(f"Accuracy: {accuracy:.3f}")
 
 
 
