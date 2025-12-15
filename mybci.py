@@ -192,35 +192,36 @@ def main():
         print("Experiment value or subject invalid")
         exit(1)
 
-    X = epochs.get_data()  # (n_epochs, n_channels, n_times)
+    X = epochs.get_data()
     y = epochs.events[:, 2]
-
-    # Convert labels to 0 and 1
     unique_labels = np.unique(y)
     y = (y == unique_labels[1]).astype(int)
-
-    # Split train/test - 80% train, 20% test (plus de données pour entraîner)
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42, stratify=y
-    )
-
+    
+    split_idx = int(0.8 * len(X))
+    X_train, X_test = X[:split_idx], X[split_idx:]
+    y_train, y_test = y[:split_idx], y[split_idx:]
+    
     print(f"Dataset split: {len(X_train)} train epochs, {len(X_test)} test epochs")
-
+    
     pipeline = Pipeline([
-        ('csp', CSP(n_components=2, reg=1e-3)),  # 2 composants au lieu de 4, plus de régularisation
-        ('scaler', StandardScaler()),
-        ('lda', LinearDiscriminantAnalysis(solver='lsqr', shrinkage='auto')) # check to edit algo/settings
+        ('csp', CSP(n_components=6, reg=1e-5)),
+        ('lda', LinearDiscriminantAnalysis(solver='lsqr', shrinkage='auto'))
     ])
-
+    
     if mode == "train":
+        scores = cross_val_score(pipeline, X_train, y_train, cv=5)
+        print(f"Cross-val scores: {scores}")
+        print(f"Cross-val mean: {scores.mean():.3f} ± {scores.std():.3f}")
+        
         train(pipeline, X_train, y_train, X_test, y_test, True)
+        
     if mode == "predict":
-        pipeline = load_model()
+        pipeline = load_model(n_components=6)
         predict(pipeline, X_test, y_test, True)
     if mode == "unknown":
-        train(pipeline, X_train, y_train, X_test, y_test, True)  # True pour voir les détails
+        train(pipeline, X_train, y_train, X_test, y_test, True)
         pipeline = load_model()
-        predict(pipeline, X_test, y_test, True)  # True pour voir les prédictions
+        predict(pipeline, X_test, y_test, True)
 
 
 
