@@ -1,11 +1,8 @@
 #!/usr/bin/env python3
-"""
-CSP (Common Spatial Patterns) - Minimal implementation
-Finds spatial filters that maximize class separation
-"""
 
 import numpy as np
 from sklearn.base import BaseEstimator, TransformerMixin
+from scipy.signal import welch
 
 
 class CSP(BaseEstimator, TransformerMixin):
@@ -108,5 +105,42 @@ class CSP(BaseEstimator, TransformerMixin):
 
     def fit_transform(self, X, y):
         return self.fit(X, y).transform(X)
+
+
+
+def extract_psd_features(X, fs=160):
+    """
+    Extract Power Spectral Density features using Fourier Transform (Welch method).
+
+    Welch method:
+    - Splits signal into overlapping segments
+    - Applies FFT (Fast Fourier Transform) to each segment
+    - Averages the power spectra -> reduces noise in frequency estimation
+
+    https://fr.wikipedia.org/wiki/Densit%C3%A9_spectrale_de_puissance
+
+    https://fr.wikipedia.org/wiki/M%C3%A9thode_de_Welch
+    """
+    n_epochs, n_channels, n_times = X.shape
+    features = []
+
+    for epoch in X:
+        epoch_features = []
+
+        for ch in range(n_channels):
+            freqs, psd = welch(epoch[ch], fs=fs, nperseg=256)
+            
+            # Extract Mu/Beta band power and store the aerage power in these bands
+            mu_idx = (freqs >= 8) & (freqs <= 12)
+            mu_power = np.mean(psd[mu_idx])
+
+            beta_idx = (freqs >= 12) & (freqs <= 30)
+            beta_power = np.mean(psd[beta_idx])
+
+            epoch_features.extend([mu_power, beta_power])
+
+        features.append(epoch_features)
+
+    return np.array(features)
 
 

@@ -4,9 +4,10 @@ import numpy as np
 import mne
 import sys
 import json
+import pickle
 from pathlib import Path
 from visualize import load_data, apply_filter
-from csp import CSP
+from csp import CSP, extract_psd_features  # CSP spatial filtering + Fourier PSD features
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
@@ -19,55 +20,24 @@ exp_id = -1
 
 
 def save_model(pipeline, filename_prefix="model"):
-    """Sauvegarde CSP et LDA séparément"""
-    csp = pipeline.named_steps['csp']
-    lda = pipeline.named_steps['lda']
-
-    # CSP
-    csp_params = {"W": csp.W_.tolist()}
-    with open(f"{filename_prefix}_csp.json", "w") as f:
-        json.dump(csp_params, f)
-
-    # LDA
-    lda_params = {
-        "coef": lda.coef_.tolist(),
-        "intercept": lda.intercept_.tolist(),
-        "classes": lda.classes_.tolist()
-    }
-    with open(f"{filename_prefix}_lda.json", "w") as f:
-        json.dump(lda_params, f)
+    """
+    Save entire pipeline to file using pickle.
+    Works with any method: csp, fourier, or both.
+    """
+    with open(f"{filename_prefix}_pipeline.pkl", "wb") as f:
+        pickle.dump(pipeline, f)
+    print(f"Model saved to {filename_prefix}_pipeline.pkl")
 
 
-
-
-def load_model(n_components=6, filename_prefix="model"):
-    """Charge CSP et LDA depuis fichiers et retourne le pipeline"""
-
-    # Charger CSP
-    with open(f"{filename_prefix}_csp.json", "r") as f:
-        csp_data = json.load(f)
-    W = np.array(csp_data["W"])
-    csp = CSP(n_components=W.shape[0])
-    csp.W_ = W
-
-    # Charger LDA
-    with open(f"{filename_prefix}_lda.json", "r") as f:
-        lda_data = json.load(f)
-    lda = LinearDiscriminantAnalysis()
-    lda.coef_ = np.array(lda_data["coef"])
-    lda.intercept_ = np.array(lda_data["intercept"])
-    lda.classes_ = np.array(lda_data["classes"])
-
-    # Pipeline final
-    pipeline = Pipeline([
-        ('csp', csp),
-        ('lda', lda)
-    ])
+def load_model(filename_prefix="model"):
+    """
+    Load entire pipeline from file.
+    Works with any method: csp, fourier, or both.
+    """
+    with open(f"{filename_prefix}_pipeline.pkl", "rb") as f:
+        pipeline = pickle.load(f)
+    print(f"Model loaded from {filename_prefix}_pipeline.pkl")
     return pipeline
-
-
-
-
 
 
 def check_args():
@@ -124,6 +94,9 @@ def predict(pipeline, X, y, flag): # flag a 1 quand only predict et a 0 qunad on
 def main():
     """Test CSP pipeline on real EEG data"""
     global subject_ids, exp_id, mode
+
+    # Options: "csp", "fourier", "both"
+    method = "fourier"
     try:
         check_args()
     except ValueError:
@@ -197,29 +170,83 @@ def main():
     # print("Pipeline Test (CSP + LDA)")
     # print("-"*60)
 
-	# Lis la def de LinearDiscrimnantAnlylis elle est pas longue et tres comprehensible
-    # pipeline = Pipeline([
-        # ('csp', CSP(n_components=4)),
-        # ('lda', LinearDiscriminantAnalysis())
-    # ])
-    pipeline = Pipeline([
-        ('csp', CSP(n_components=4, reg=1e-4)),
-        ('scaler', StandardScaler()), # need to normalise and scaling features/values
-        ('lda', LinearDiscriminantAnalysis(solver='lsqr', shrinkage='auto')) # check to edit algo/settings
-    ])
+    # ==================================================================
+    # FEATURE EXTRACTION based on method choice
+    # ==================================================================
+    print("\n" + "="*60)
+    print(f"Method selected: {method.upper()}")
+    print("="*60)
 
+    if method == "csp":
+        # Option 1: CSP spatial filtering only
+        print("Using CSP (Common Spatial Patterns) - Spatial filtering")
+        print(f"Original data: {X.shape} (epochs, channels, time_samples)")
+
+        pipeline = Pipeline([
+            ('csp', CSP(n_components=4, reg=1e-4)),
+            ('scaler', StandardScaler()),
+            ('lda', LinearDiscriminantAnalysis(solver='lsqr', shrinkage='auto'))
+        ])
+        X_features = X
+        print(f"Pipeline: CSP -> StandardScaler -> LDA")
+
+    elif method == "fourier":
+        # Option 2: Fourier PSD features only
+        print("Using Fourier Transform (Welch PSD) - Frequency domain")
+        X_fourier = extract_psd_features(X, fs=160)
+        print(f"Original data:     {X.shape} (epochs, channels, time_samples)")
+        print(f"Fourier features:  {X_fourier.shape} (epochs, frequency_features)")
+        print(f"Feature reduction: {X.shape[1] * X.shape[2]} -> {X_fourier.shape[1]}")
+
+        pipeline = Pipeline([
+            ('scaler', StandardScaler()),
+            ('lda', LinearDiscriminantAnalysis(solver='lsqr', shrinkage='auto'))
+        ])
+        X_features = X_fourier
+        print(f"Pipeline: Fourier PSD -> StandardScaler -> LDA")
+
+    elif method == "both":
+        # Option 3: CSP + Fourier combined
+        print("Using CSP + Fourier (Combined) - Spatial + Frequency domain")
+
+        # Extract both feature types
+        csp = CSP(n_components=4, reg=1e-4)
+        X_csp = csp.fit_transform(X, y)
+        X_fourier = extract_psd_features(X, fs=160)
+
+        # Combine features
+        X_combined = np.hstack([X_csp, X_fourier])
+
+        print(f"Original data:     {X.shape} (epochs, channels, time_samples)")
+        print(f"CSP features:      {X_csp.shape} (epochs, csp_components)")
+        print(f"Fourier features:  {X_fourier.shape} (epochs, frequency_features)")
+        print(f"Combined features: {X_combined.shape} (epochs, total_features)")
+
+        pipeline = Pipeline([
+            ('scaler', StandardScaler()),
+            ('lda', LinearDiscriminantAnalysis(solver='lsqr', shrinkage='auto'))
+        ])
+        X_features = X_combined
+        print(f"Pipeline: CSP+Fourier -> StandardScaler -> LDA")
+
+    else:
+        raise ValueError(f"Invalid method: {method}. Choose 'csp', 'fourier', or 'both'")
+
+    print("="*60 + "\n")
+
+    # Train/Predict/Evaluate
     if mode == "train":
-        train(pipeline, X, y)
+        train(pipeline, X_features, y)
     if mode == "predict":
-        predict(pipeline, X, y, True)
+        predict(pipeline, X_features, y, True)
     if mode == "unknown":
-        train(pipeline, X, y)
+        train(pipeline, X_features, y)
         pipeline = load_model()
-        predict(pipeline, X, y, False)
+        predict(pipeline, X_features, y, False)
 
-
-    scores = cross_val_score(pipeline, X, y, cv=5)
-    print(f"5-Fold CV scores: {scores}")
+    # Cross-validation to evaluate generalization performance
+    scores = cross_val_score(pipeline, X_features, y, cv=5)
+    print(f"\n5-Fold CV scores: {scores}")
     print(f"Mean accuracy: {scores.mean():.3f} ± {scores.std():.3f}")
 
 if __name__ == "__main__":
