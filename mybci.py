@@ -26,7 +26,6 @@ def save_model(pipeline, filename_prefix="model"):
     """
     with open(f"{filename_prefix}_pipeline.pkl", "wb") as f:
         pickle.dump(pipeline, f)
-    print(f"Model saved to {filename_prefix}_pipeline.pkl")
 
 
 def load_model(filename_prefix="model"):
@@ -36,7 +35,6 @@ def load_model(filename_prefix="model"):
     """
     with open(f"{filename_prefix}_pipeline.pkl", "rb") as f:
         pipeline = pickle.load(f)
-    print(f"Model loaded from {filename_prefix}_pipeline.pkl")
     return pipeline
 
 
@@ -48,6 +46,8 @@ def check_args():
         try:
             subject_ids = int(args[1])
             exp_id = int(args[0])
+            if exp_id < 0 or subject_ids < 0:
+                raise ValueError("N)eed only positive arguments")
         except Exception as e:
             print("Need an int as argument for the number of the experiments and/or for the subject")
             exit(1)
@@ -65,28 +65,52 @@ def check_args():
 
 
 
-def train(pipeline, X, y):
+def train(pipeline, X, y, flag):
     pipeline.fit(X, y)
     y_pred = pipeline.predict(X)
     accuracy = np.mean(y_pred == y)
-    save_model(pipeline)  # sauvegarde apres entrainement
+    if  flag:
+        scores = cross_val_score(pipeline, X, y, cv=5)
+        print(scores)
+        print(f"cross_val_scores: {scores.mean():.5f}")
+    save_model(pipeline)  # sauvegarde apres 
 
 
 
 
 
 def predict(pipeline, X, y, flag): # flag a 1 quand only predict et a 0 qunad on doit faire tous les sujet/exp
-    flag = True #toremove (only bc for all isnt implemented yet)
+    global runs
+    accuracy = 0
     if (flag):
         equal = False
         y_pred = pipeline.predict(X)
         print("epoch nb: [prediction] [truth] equal?")
         for i, (pred, truth) in enumerate(zip(y_pred, y)):
             equal =  True if int(truth) == int(pred) else False
+            if equal == True:
+                accuracy += 1
             print(f"epoch {i:02d}\t\t[{truth}]\t[{pred}] {equal}")
+        print(f"Accuracy: {accuracy / len(y_pred)}")
     else:
-        print("NEED TO IMPLEMENT THE VERSION FOR ALL THE SUBJECTS/EXP")
+        #laod data
+        #train
+        #acccuracies = [[]]
+        for run in range(runs):
+            for subject in list(range(1, 110)):
+                pass
+                #predict
+                #accuracy = accuracy / len(y_pred)  need to check how to get the real positive
+                #print(f"experiment {run}: subject {subject}: accuracy = {accuracy})
+                #accuracies[run].append(accuracy)
+            #accuracies[run]
 
+        #print("Mean accuracy of the six different experiments for all 109 subjects:")
+        #accuracies_2 = []
+        #for exp in range(accuracies):
+            #print(f"experiment {exp}: \t accuracy = {accuracies[exp].accuracy}) need to find how to get the accuracy for each exp
+            #accuracies_2.append(accuracies[exp].accuracy)
+        #print(f"Mean accuracy of 6 experiments{accuracies_2.accuracy}")
 
 
 
@@ -107,13 +131,13 @@ def main():
     subject_id = subject_ids
     runs = exp_id
 
-    #toremove ########
-    if (subject_ids == -1 and exp_id == -1):
-        subject_id = 14
-        runs = 4
-    ##################
+    if ( exp_id == -1):
+        runs = [4, 6, 8, 10, 12, 14]  # 6 runs au lieu de 3 pour plus de données
 
-	# on load juste de la data c'est pas interessant 
+    subject_id = subject_ids
+    runs = exp_id
+
+
     try:
         raw = load_data(subject_id, runs)
     except ValueError:
@@ -150,64 +174,26 @@ def main():
     y = (y == unique_labels[1]).astype(int)
 
 
-
-    # print(f"\nData: {X.shape[0]} epochs, {X.shape[1]} channels, {X.shape[2]} samples")
-    # print(f"Classes: {np.sum(y==0)} vs {np.sum(y==1)}")
-
-    # print("\n" + "-"*60)
-    # print("CSP Dimensionality Reduction")
-    # print("-"*60)
-
-    # csp = CSP(n_components=6)
-    # csp.fit(X, y)
-    # X_csp = csp.transform(X)
-
-    # print(f"Input:  {X.shape}")
-    # print(f"Output: {X_csp.shape}")
-    # print(f"Reduction: {X.shape[1]} channels → {csp.n_components} features")
-
-    # print("\n" + "-"*60)
-    # print("Pipeline Test (CSP + LDA)")
-    # print("-"*60)
-
-    # ==================================================================
-    # FEATURE EXTRACTION based on method choice
-    # ==================================================================
-    print("\n" + "="*60)
-    print(f"Method selected: {method.upper()}")
-    print("="*60)
-
     if method == "csp":
         # Option 1: CSP spatial filtering only
-        print("Using CSP (Common Spatial Patterns) - Spatial filtering")
-        print(f"Original data: {X.shape} (epochs, channels, time_samples)")
-
         pipeline = Pipeline([
             ('csp', CSP(n_components=4, reg=1e-4)),
             ('scaler', StandardScaler()),
             ('lda', LinearDiscriminantAnalysis(solver='lsqr', shrinkage='auto'))
         ])
         X_features = X
-        print(f"Pipeline: CSP -> StandardScaler -> LDA")
 
     elif method == "fourier":
         # Option 2: Fourier PSD features only
-        print("Using Fourier Transform (Welch PSD) - Frequency domain")
         X_fourier = extract_psd_features(X, fs=160)
-        print(f"Original data:     {X.shape} (epochs, channels, time_samples)")
-        print(f"Fourier features:  {X_fourier.shape} (epochs, frequency_features)")
-        print(f"Feature reduction: {X.shape[1] * X.shape[2]} -> {X_fourier.shape[1]}")
-
         pipeline = Pipeline([
             ('scaler', StandardScaler()),
             ('lda', LinearDiscriminantAnalysis(solver='lsqr', shrinkage='auto'))
         ])
         X_features = X_fourier
-        print(f"Pipeline: Fourier PSD -> StandardScaler -> LDA")
 
     elif method == "both":
         # Option 3: CSP + Fourier combined
-        print("Using CSP + Fourier (Combined) - Spatial + Frequency domain")
 
         # Extract both feature types
         csp = CSP(n_components=4, reg=1e-4)
@@ -217,37 +203,27 @@ def main():
         # Combine features
         X_combined = np.hstack([X_csp, X_fourier])
 
-        print(f"Original data:     {X.shape} (epochs, channels, time_samples)")
-        print(f"CSP features:      {X_csp.shape} (epochs, csp_components)")
-        print(f"Fourier features:  {X_fourier.shape} (epochs, frequency_features)")
-        print(f"Combined features: {X_combined.shape} (epochs, total_features)")
-
         pipeline = Pipeline([
             ('scaler', StandardScaler()),
             ('lda', LinearDiscriminantAnalysis(solver='lsqr', shrinkage='auto'))
         ])
         X_features = X_combined
-        print(f"Pipeline: CSP+Fourier -> StandardScaler -> LDA")
 
     else:
         raise ValueError(f"Invalid method: {method}. Choose 'csp', 'fourier', or 'both'")
 
-    print("="*60 + "\n")
 
     # Train/Predict/Evaluate
     if mode == "train":
-        train(pipeline, X_features, y)
+        train(pipeline, X_features, y, True)
     if mode == "predict":
+        pipeline = load_model()
         predict(pipeline, X_features, y, True)
     if mode == "unknown":
-        train(pipeline, X_features, y)
+        train(pipeline, X_features, y, False)
         pipeline = load_model()
         predict(pipeline, X_features, y, False)
 
-    # Cross-validation to evaluate generalization performance
-    scores = cross_val_score(pipeline, X_features, y, cv=5)
-    print(f"\n5-Fold CV scores: {scores}")
-    print(f"Mean accuracy: {scores.mean():.3f} ± {scores.std():.3f}")
 
 if __name__ == "__main__":
     main()
